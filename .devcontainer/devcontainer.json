@@ -1,0 +1,15 @@
+{
+	"name": "MoveX Backend",
+	"dockerFile": "Dockerfile",
+	"context": "..",
+	"settings": {
+		"terminal.integrated.defaultProfile.linux": "bash"
+	},
+	"extensions": [
+		"ms-python.python",
+		"ms-python.vscode-pylance",
+		"ms-azuretools.vscode-docker"
+	],
+	"postCreateCommand": "pip install -r requirements.txt",
+	"remoteUser": "vscode"
+}
