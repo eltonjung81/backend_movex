@@ -1,0 +1,1 @@
+web: gunicorn movex.wsgi --log-file -
