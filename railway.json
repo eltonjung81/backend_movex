@@ -5,7 +5,9 @@
       "phases": {
         "install": {
           "commands": [
-            "apt-get update && apt-get install -y zlib1g-dev libjpeg-dev libfreetype6-dev libpng-dev"
+            "apt-get update && apt-get install -y build-essential python3-dev zlib1g-dev libjpeg-dev libfreetype6-dev libpng-dev libtiff-dev libopenjp2-7-dev libwebp-dev libxcb1-dev",
+            "pip install --upgrade pip",
+            "pip install -r requirements.txt"
           ]
         }
       }
