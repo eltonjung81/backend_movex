@@ -14,7 +14,7 @@
     }
   },
   "deploy": {
-    "startCommand": "python manage.py migrate && python create_superuser.py && daphne -b 0.0.0.0 -p 8080 movex.asgi:application",
+    "startCommand": "python manage.py migrate && daphne -b 0.0.0.0 -p 8080 movex.asgi:application",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
