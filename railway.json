@@ -14,7 +14,7 @@
     }
   },
   "deploy": {
-    "startCommand": "python manage.py migrate && python create_superuser.py && gunicorn movex.asgi:application -k uvicorn.workers.UvicornWorker ",
+    "startCommand": "python manage.py migrate && python create_superuser.py && gunicorn movex.asgi:application -k uvicorn.workers.UvicornWorker --workers 89",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
