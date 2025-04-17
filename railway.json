@@ -1,6 +1,15 @@
 {
   "build": {
-    "builder": "NIXPACKS"
+    "builder": "NIXPACKS",
+    "nixpacks": {
+      "phases": {
+        "install": {
+          "commands": [
+            "apt-get update && apt-get install -y zlib1g-dev libjpeg-dev"
+          ]
+        }
+      }
+    }
   },
   "deploy": {
     "startCommand": "python manage.py migrate && python create_superuser.py && gunicorn movex.asgi:application -k uvicorn.workers.UvicornWorker",
