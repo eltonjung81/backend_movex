@@ -122,115 +122,62 @@ def decimal_serializer(obj):
         return float(obj)
     raise TypeError("Tipo não serializável")
 
-# Função para consultar rota no OpenRouteService
+# Função para consultar rota no OSRM
 async def buscar_rota_openroute(start_lat, start_lng, end_lat, end_lng):
     """
-    Busca rota usando o OpenRouteService, com fallback para requests
-    se aiohttp não estiver disponível
+    Função renomeada mas mantida para compatibilidade.
+    Agora usa diretamente a API OSRM para cálculo de rotas sem tentar OpenRoute
     """
-    import logging
-    logger = logging.getLogger(__name__)
+    # Logar apenas início da operação, sem repetir coordenadas detalhadas
+    logger.info(f"Buscando rota: [{start_lat:.6f},{start_lng:.6f}] → [{end_lat:.6f},{end_lng:.6f}]")
     
-    # API key para OpenRouteService - ATUALIZADA para uma nova chave
-    # Obtenha sua própria chave em https://openrouteservice.org/dev/#/signup
-    api_key = "5b3ce3597851110001cf62487b919f9562a947feb934acf16951d0d9"  # Substitua por uma chave válida
-    
-    # Endpoint para o serviço de direção - verifica se é o correto para a API atual
-    url = "https://api.openrouteservice.org/v2/directions/driving-car"
-    
-    # Prepare os parâmetros da requisição no formato CORRETO para a API v2
-    params = {
-        "api_key": api_key,
-    }
-    
-    # Corpo da requisição no formato JSON esperado pela API v2
-    body = {
-        "coordinates": [[start_lng, start_lat], [end_lng, end_lat]],
-        "format": "geojson"
-    }
-    
-    logger.info(f"Tentando buscar rota de [{start_lat},{start_lng}] para [{end_lat},{end_lng}]")
-    
+    # Usar diretamente a API OSRM que está funcionando
     try:
+        # OSRM é um serviço alternativo e gratuito que funciona corretamente
+        logger.info("Usando API OSRM para rota")
+        url = f"http://router.project-osrm.org/route/v1/driving/{start_lng},{start_lat};{end_lng},{end_lat}"
+        params = {
+            "overview": "full",
+            "geometries": "geojson",
+            "steps": "true"
+        }
+        
         try:
             import aiohttp
-            # Utilizando aiohttp (assíncrono) se disponível
-            logger.info("Usando aiohttp para buscar rota")
-            
-            # Defina cabeçalhos corretos para API JSON
-            headers = {
-                "Authorization": api_key,
-                "Content-Type": "application/json",
-                "Accept": "application/json, application/geo+json"
-            }
-            
             async with aiohttp.ClientSession() as session:
-                # Usando POST em vez de GET para enviar coordenadas no corpo
-                async with session.post(
-                    url, 
-                    json=body,
-                    headers=headers
-                ) as response:
+                async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        logger.info("Resposta da API recebida com sucesso")
-                        return processar_resposta_openroute(data, logger)
+                        logger.info("API OSRM: resposta recebida")
+                        return processar_resposta_osrm(data, logger)
                     else:
                         error_text = await response.text()
-                        logger.error(f"Erro na API: {response.status}, Detalhe: {error_text[:100]}")
-                        # Log adicional para debug
-                        logger.error(f"Headers enviados: {headers}")
-                        logger.error(f"Body enviado: {body}")
-                        # Lançar exceção para usar o fallback
-                        raise Exception(f"Erro na API: {response.status}")
-                        
+                        logger.error(f"Erro na API OSRM: {response.status}")
+                        # Se falhar, vamos para o cálculo simplificado
+                        raise Exception(f"Erro na API OSRM: {response.status}")
         except (ImportError, ModuleNotFoundError):
-            # Fallback para requests (síncrono)
-            logger.warning("aiohttp não está disponível, usando requests como método alternativo")
-            
+            # Fallback para requests
+            logger.info("Fallback: usando requests para API OSRM")
             import requests
-            
-            headers = {
-                "Authorization": api_key,
-                "Content-Type": "application/json",
-                "Accept": "application/json, application/geo+json"
-            }
-            
-            response = requests.post(
-                url, 
-                json=body,
-                headers=headers,
-                timeout=10
-            )
-            
+            response = requests.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                logger.info("Resposta da API recebida com sucesso (via requests)")
-                return processar_resposta_openroute(data, logger)
+                logger.info("API OSRM (via requests): resposta recebida")
+                return processar_resposta_osrm(data, logger)
             else:
-                logger.error(f"Erro na API (requests): {response.status_code}, Detalhe: {response.text[:100]}")
-                # Log adicional para debug
-                logger.error(f"Headers enviados: {headers}")
-                logger.error(f"Body enviado: {body}")
-                raise Exception(f"Erro na API: {response.status_code}")
+                logger.error(f"Erro na API OSRM (requests): {response.status_code}")
+                raise Exception(f"Erro na API OSRM: {response.status_code}")
                 
     except Exception as e:
         # Se todas as tentativas falharem, usar cálculo simplificado melhorado
-        logger.warning(f"Erro ao buscar rota via API: {str(e)}. Usando cálculo simplificado melhorado.")
-        
-        # Tentativa alternativa com API diferente
-        try:
-            # Segunda tentativa com endpoint alternativo
-            logger.info("Tentando endpoint alternativo")
-            return await buscar_rota_alternativa(start_lat, start_lng, end_lat, end_lng, logger)
-        except Exception as e2:
-            logger.warning(f"Também falhou com API alternativa: {str(e2)}")
-            # Se ainda falhar, usar o método simplificado
-            return calcular_rota_simplificada_melhorada(start_lat, start_lng, end_lat, end_lng)
+        logger.warning(f"Usando cálculo alternativo após falha na API OSRM: {str(e)}")
+        # Método simplificado como última opção
+        return calcular_rota_simplificada_melhorada(start_lat, start_lng, end_lat, end_lng)
 
 async def buscar_rota_alternativa(start_lat, start_lng, end_lat, end_lng, logger):
     """Usa uma API alternativa para calcular rotas quando a principal falha"""
     # OSRM é um serviço alternativo e gratuito que pode ser usado
+    logger.info("Tentando API alternativa (OSRM)")
     url = f"http://router.project-osrm.org/route/v1/driving/{start_lng},{start_lat};{end_lng},{end_lat}"
     params = {
         "overview": "full",
@@ -244,7 +191,7 @@ async def buscar_rota_alternativa(start_lat, start_lng, end_lat, end_lng, logger
             async with session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    logger.info("Resposta da API alternativa recebida com sucesso")
+                    logger.info("API alternativa: resposta recebida")
                     return processar_resposta_osrm(data, logger)
                 else:
                     raise Exception(f"Erro na API alternativa: {response.status}")
@@ -254,7 +201,7 @@ async def buscar_rota_alternativa(start_lat, start_lng, end_lat, end_lng, logger
         response = requests.get(url, params=params, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            logger.info("Resposta da API alternativa recebida com sucesso (via requests)")
+            logger.info("API alternativa (via requests): resposta recebida")
             return processar_resposta_osrm(data, logger)
         else:
             raise Exception(f"Erro na API alternativa: {response.status_code}")
@@ -317,7 +264,7 @@ def processar_resposta_openroute(data, logger):
                             "longitude": coord[0]
                         })
                 
-                logger.info(f"Rota calculada via OpenRouteService: {distancia_km:.2f}km, {tempo_minutos}min, {len(coordinates)} pontos")
+                logger.info(f"Rota calculada: {distancia_km:.2f}km, {tempo_minutos}min, {len(coordinates)} pontos")
                 
                 return {
                     "success": True,
@@ -328,7 +275,7 @@ def processar_resposta_openroute(data, logger):
                 }
     
     except Exception as e:
-        logger.error(f"Erro ao processar resposta da API: {str(e)}")
+        logger.error(f"Erro ao processar resposta: {str(e)}")
     
     # Em caso de erro, retornar None para usar o fallback
     return None
@@ -415,9 +362,18 @@ def cancelar_corrida(corrida_id, user_cpf, user_tipo, motivo, status):
 def debug_websocket_message(message_type, data, direction='SEND'):
     """
     Registra informações detalhadas sobre mensagens WebSocket para depuração
+    com nível de detalhamento reduzido para mensagens comuns
     """
     try:
-        logger.debug(f"[WEBSOCKET {direction}] {message_type}")
-        logger.debug(f"[WEBSOCKET {direction} DATA] {json.dumps(data, default=decimal_serializer)}")
+        # Filtra tipos de mensagens para reduzir logs
+        if message_type in ['ping', 'pong', 'heartbeat', 'atualizar_localizacao']:
+            return  # Não logar esses tipos comuns
+            
+        # Para eventos importantes, logar apenas o tipo sem o payload completo
+        if direction == 'SEND':
+            logger.debug(f"WS→ {message_type}")
+        else:
+            logger.debug(f"WS← {message_type}")
+            
     except Exception as e:
         logger.error(f"Erro ao registrar mensagem WebSocket: {e}")

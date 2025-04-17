@@ -1,1 +1,1 @@
-web: gunicorn movex.wsgi --log-file -
+web: gunicorn movex.asgi:application -k uvicorn.workers.UvicornWorker -c gunicorn.conf.py

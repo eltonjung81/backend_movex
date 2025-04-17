@@ -13,9 +13,9 @@ urlpatterns = [
     path('registro/passageiro/', RegistroPassageiroView.as_view(), name='registro-passageiro'),
     path('login/', LoginView.as_view(), name='login'),
     path('login/passageiro/', LoginPassageiroView.as_view(), name='login-passageiro'),
-    # Estas duas rotas abaixo também estão definidas no arquivo principal para garantir o funcionamento
-    path('login/motorista/', LoginMotoristaView.as_view(), name='login-motorista'),
-    path('motorista/buscar_dados/', BuscarDadosMotoristaView.as_view(), name='buscar_dados_motorista'),
+    # Removendo rotas duplicadas que já estão no arquivo principal
+    # path('login/motorista/', LoginMotoristaView.as_view(), name='login-motorista'),
+    # path('motorista/buscar_dados/', BuscarDadosMotoristaView.as_view(), name='buscar_dados_motorista'),
 ]
 
 # Log de URLs registradas para depuração

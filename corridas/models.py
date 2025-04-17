@@ -84,3 +84,48 @@ class Corrida(models.Model):
     def __str__(self):
         motorista_nome = self.motorista.usuario.get_full_name() if self.motorista else "Não atribuído"
         return f'Corrida {self.id} - {self.passageiro.usuario.get_full_name()} com {motorista_nome} - {self.status}'
+    
+    def obter_mensagens_chat(self):
+        """
+        Retorna todas as mensagens de chat desta corrida, ordenadas por data de envio
+        """
+        return self.mensagens.all().order_by('data_envio')
+    
+    def contar_mensagens_nao_lidas(self, tipo_destinatario):
+        """
+        Conta quantas mensagens não lidas existem para um tipo de destinatário
+        
+        Args:
+            tipo_destinatario: 'PASSAGEIRO' ou 'MOTORISTA'
+        
+        Returns:
+            int: Número de mensagens não lidas
+        """
+        # Se o destinatário é PASSAGEIRO, o remetente é MOTORISTA e vice-versa
+        tipo_remetente = 'MOTORISTA' if tipo_destinatario == 'PASSAGEIRO' else 'PASSAGEIRO'
+        return self.mensagens.filter(tipo_remetente=tipo_remetente, lida=False).count()
+
+
+class MensagemChat(models.Model):
+    TIPO_REMETENTE_CHOICES = [
+        ('PASSAGEIRO', 'Passageiro'),
+        ('MOTORISTA', 'Motorista'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    corrida = models.ForeignKey('Corrida', on_delete=models.CASCADE, related_name='mensagens')
+    tipo_remetente = models.CharField(max_length=20, choices=TIPO_REMETENTE_CHOICES, db_index=True)
+    conteudo = models.TextField()
+    data_envio = models.DateTimeField(auto_now_add=True, db_index=True)
+    lida = models.BooleanField(default=False, db_index=True)
+    
+    class Meta:
+        ordering = ['data_envio']
+        indexes = [
+            models.Index(fields=['corrida', 'tipo_remetente']),
+            models.Index(fields=['corrida', 'lida']),
+            models.Index(fields=['corrida', 'data_envio'])
+        ]
+    
+    def __str__(self):
+        return f"Mensagem de {self.tipo_remetente} em {self.data_envio}"

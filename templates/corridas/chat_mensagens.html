@@ -1,0 +1,100 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="chat-container">
+    <h1>Chat da Corrida {{ corrida.id }}</h1>
+    
+    <div class="details">
+        <p><strong>Passageiro:</strong> {{ corrida.passageiro.usuario.get_full_name }}</p>
+        <p><strong>Motorista:</strong> {{ corrida.motorista.usuario.get_full_name|default:"Não atribuído" }}</p>
+        <p><strong>Status:</strong> {{ corrida.get_status_display }}</p>
+    </div>
+    
+    <div class="messages-container">
+        {% for mensagem in mensagens %}
+        <div class="message {% if mensagem.tipo_remetente == 'PASSAGEIRO' %}passenger{% else %}driver{% endif %}">
+            <div class="header">
+                <span class="sender">{{ mensagem.get_tipo_remetente_display }}</span>
+                <span class="time">{{ mensagem.data_envio }}</span>
+            </div>
+            <div class="content">
+                {{ mensagem.conteudo }}
+            </div>
+            <div class="status">
+                {% if mensagem.lida %}
+                <span class="read">Lida</span>
+                {% else %}
+                <span class="unread">Não lida</span>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <p class="no-messages">Nenhuma mensagem trocada nesta corrida.</p>
+        {% endfor %}
+    </div>
+    
+    <div class="actions">
+        <a href="{% url 'admin:corridas_corrida_change' corrida.id %}" class="button">Voltar para Detalhes da Corrida</a>
+    </div>
+</div>
+
+<style>
+    .chat-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .messages-container {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        margin: 20px 0;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    .message {
+        margin-bottom: 15px;
+        padding: 10px;
+        border-radius: 5px;
+    }
+    .passenger {
+        background-color: #e3f2fd;
+        margin-right: 20%;
+    }
+    .driver {
+        background-color: #f0f4c3;
+        margin-left: 20%;
+    }
+    .header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+        font-size: 0.8em;
+        color: #666;
+    }
+    .content {
+        white-space: pre-wrap;
+    }
+    .status {
+        text-align: right;
+        font-size: 0.7em;
+        margin-top: 5px;
+    }
+    .read {
+        color: #4caf50;
+    }
+    .unread {
+        color: #ff9800;
+    }
+    .no-messages {
+        color: #999;
+        text-align: center;
+        padding: 20px;
+    }
+    .details {
+        background-color: #f5f5f5;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}

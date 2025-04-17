@@ -1,14 +1,9 @@
 from django.urls import path
-from django.http import JsonResponse
+from . import views
 
 app_name = 'corridas'
 
-# Rota básica para evitar erros
 urlpatterns = [
-    path('', lambda request: JsonResponse({'message': 'Corridas API funcionando!'})),
+    # Using a UUID path converter for corrida_id
+    path('corridas/<uuid:corrida_id>/chat/', views.visualizar_mensagens_chat, name='visualizar_mensagens_chat'),
 ]
-
-# Adicionar log para depuração
-import logging
-logger = logging.getLogger(__name__)
-logger.info("Corridas URLs carregadas com sucesso")

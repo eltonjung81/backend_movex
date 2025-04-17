@@ -9,6 +9,20 @@ from .utils import calcular_distancia
 
 logger = logging.getLogger(__name__)
 
+# Inicialização da variável global para armazenar corridas em andamento
+corridas_em_andamento = {}
+
+def sincronizar_corridas_em_andamento():
+    """Sincroniza o estado das corridas pendentes no banco de dados com as variáveis em memória."""
+    try:
+        # Buscar apenas corridas PENDENTES
+        corridas_pendentes = Corrida.objects.filter(status='PENDENTE')
+        global corridas_em_andamento
+        corridas_em_andamento = {corrida.id: corrida for corrida in corridas_pendentes}
+        logger.info("Sincronização de corridas pendentes em memória concluída com sucesso.")
+    except Exception as e:
+        logger.error(f"Erro ao sincronizar corridas pendentes: {str(e)}")
+
 def verificar_corridas_em_andamento(cpf_motorista):
     """Verifica se o motorista possui corridas em andamento e marca como temporariamente indisponível"""
     try:
@@ -218,6 +232,12 @@ def aceitar_corrida(corrida_id, motorista_cpf, status='ACEITA'):
 
         logger.info(f"Corrida {corrida_id} aceita pelo motorista {motorista_cpf} com status {status}")
 
+        # Após aceitar, remover da memória se existir
+        global corridas_em_andamento
+        if 'corridas_em_andamento' in globals() and corridas_em_andamento and corrida.id in corridas_em_andamento:
+            del corridas_em_andamento[corrida.id]
+            logger.info(f"Corrida {corrida.id} removida do cache em memória após ser aceita")
+
         # Buscar todos os motoristas ativos para notificá-los sobre a corrida já aceita
         outros_motoristas = Motorista.objects.filter(
             esta_disponivel=True,
@@ -238,116 +258,48 @@ def aceitar_corrida(corrida_id, motorista_cpf, status='ACEITA'):
         traceback.print_exc()
         return False, None, []
 
-def atualizar_status_motorista(cpf, status, esta_disponivel):
-    """
-    Atualiza o status de disponibilidade do motorista.
-    Retorna True se o status foi atualizado com sucesso, False caso contrário.
-    """
+def iniciar_corrida(corrida_id, motorista_cpf, status='EM_ANDAMENTO'):
+    """Inicia uma corrida após o motorista chegar e o passageiro embarcar"""
     try:
-        print(f"[DEBUG] Tentando atualizar status do motorista {cpf} para {status} (disponível: {esta_disponivel})")
+        # Verificar se a corrida existe e está com status de motorista chegou
+        try:
+            corrida = Corrida.objects.get(id=corrida_id)
+        except Corrida.DoesNotExist:
+            logger.error(f"Corrida {corrida_id} não encontrada para iniciar")
+            return False, None
+            
+        # Verificar se o motorista é o mesmo da corrida
+        try:
+            usuario = Usuario.objects.get(cpf=motorista_cpf, tipo_usuario='MOTORISTA')
+            motorista = Motorista.objects.get(usuario=usuario)
+            
+            if corrida.motorista != motorista:
+                logger.error(f"Motorista {motorista_cpf} não está associado à corrida {corrida_id}")
+                return False, None
+        except (Usuario.DoesNotExist, Motorista.DoesNotExist):
+            logger.error(f"Motorista {motorista_cpf} não encontrado")
+            return False, None
         
-        from django.utils import timezone
-        from usuarios.models import Motorista
+        # Atualizar o status da corrida para EM_ANDAMENTO
+        corrida.status = status
+        corrida.data_inicio = timezone.now()
+        corrida.save()
         
-        # Buscar o motorista pelo CPF
-        motorista = Motorista.objects.filter(cpf=cpf).first()
+        logger.info(f"Corrida {corrida_id} iniciada pelo motorista {motorista_cpf}. Status atualizado para: {status}")
+
+        # Após iniciar, remover da memória se existir
+        global corridas_em_andamento
+        if 'corridas_em_andamento' in globals() and corridas_em_andamento and corrida.id in corridas_em_andamento:
+            del corridas_em_andamento[corrida.id]
+            logger.info(f"Corrida {corrida.id} removida do cache em memória após ser iniciada")
         
-        if not motorista:
-            print(f"[ERROR] Motorista com CPF {cpf} não encontrado")
-            return False
-        
-        # Registrar status anterior para logging
-        status_anterior = motorista.status
-        disponivel_anterior = motorista.esta_disponivel
-        
-        # Atualizar status
-        motorista.status = status
-        motorista.esta_disponivel = esta_disponivel
-        
-        # Se ficar disponível, atualizar também a localização
-        if esta_disponivel:
-            motorista.ultima_atualizacao_localizacao = timezone.now()
-        
-        # Salvar as alterações
-        motorista.save(update_fields=['status', 'esta_disponivel', 'ultima_atualizacao_localizacao'])
-        
-        print(f"[DEBUG] Status do motorista {cpf} atualizado com sucesso: {status_anterior} -> {status}, {disponivel_anterior} -> {esta_disponivel}")
-        return True
-        
+        # Retornar True e o CPF do passageiro para notificação
+        return True, corrida.passageiro.usuario.cpf if corrida.passageiro else None
     except Exception as e:
-        print(f"[ERROR] Erro ao atualizar status do motorista {cpf}: {str(e)}")
+        logger.error(f"Erro ao iniciar corrida: {str(e)}")
         import traceback
         traceback.print_exc()
-        return False
-
-def buscar_dados_motorista(cpf_motorista):
-    """
-    Busca os dados do motorista com o CPF informado.
-    """
-    try:
-        # Tenta buscar o motorista pelo CPF
-        motorista = Motorista.objects.get(cpf=cpf_motorista)
-        
-        # Acessar os atributos pessoais através do relacionamento com Usuario
-        return {
-            'cpf': motorista.cpf,  # Use CPF como identificador em vez de ID
-            'nome': motorista.usuario.nome if hasattr(motorista, 'usuario') else '',
-            'sobrenome': motorista.usuario.sobrenome if hasattr(motorista, 'usuario') else '',
-            'telefone': motorista.usuario.telefone if hasattr(motorista, 'usuario') else '',
-            'veiculo': {
-                'modelo': motorista.modelo_veiculo,
-                'placa': motorista.placa_veiculo,
-                'cor': motorista.cor_veiculo
-            }
-        }
-    except Exception as e:
-        # Logar o erro detalhado para ajudar na depuração
-        import traceback
-        print(f"Erro ao buscar dados do motorista {cpf_motorista}: {e}")
-        print(traceback.format_exc())
-        return None
-
-def atualizar_localizacao_motorista(cpf, latitude, longitude):
-    """Atualiza a localização de um motorista"""
-    try:
-        usuario = Usuario.objects.get(cpf=cpf, tipo_usuario='MOTORISTA')
-        motorista = Motorista.objects.get(usuario=usuario)
-        
-        # Assumindo que você tenha esses campos no modelo Motorista
-        # Se não tiver, você precisará adicionar ou usar outra tabela
-        motorista.ultima_latitude = Decimal(str(latitude))
-        motorista.ultima_longitude = Decimal(str(longitude))
-        motorista.ultima_atualizacao_localizacao = timezone.now()
-        motorista.save()
-        
-        #logger.info(f"Localização do motorista {cpf} atualizada: {latitude}, {longitude}")
-        return True
-    except Exception as e:
-        logger.error(f"Erro ao atualizar localização do motorista: {str(e)}")
-        return False
-
-def obter_corrida_em_andamento(cpf_motorista):
-    """Obtém a corrida em andamento de um motorista"""
-    try:
-        usuario = Usuario.objects.get(cpf=cpf_motorista, tipo_usuario='MOTORISTA')
-        motorista = Motorista.objects.get(usuario=usuario)
-        
-        # Buscar corrida em andamento
-        corrida = Corrida.objects.filter(
-            motorista=motorista,
-            status__in=['ACEITA', 'EM_ANDAMENTO']
-        ).first()
-        
-        if corrida:
-            return {
-                'corrida_id': str(corrida.id),
-                'passageiro_cpf': corrida.passageiro.usuario.cpf if corrida.passageiro else None,
-                'status': corrida.status
-            }
-        return None
-    except Exception as e:
-        logger.error(f"Erro ao obter corrida em andamento: {str(e)}")
-        return None
+        return False, None
 
 def finalizar_corrida(corrida_id, motorista_cpf, status='FINALIZADA'):
     """Finaliza uma corrida"""
@@ -385,6 +337,12 @@ def finalizar_corrida(corrida_id, motorista_cpf, status='FINALIZADA'):
         motorista.save()
         
         logger.info(f"Corrida {corrida_id} finalizada pelo motorista {motorista_cpf} com status {status_interno}")
+
+        # Após finalizar, remover da memória se existir
+        global corridas_em_andamento
+        if 'corridas_em_andamento' in globals() and corridas_em_andamento and corrida.id in corridas_em_andamento:
+            del corridas_em_andamento[corrida.id]
+            logger.info(f"Corrida {corrida.id} removida do cache em memória após ser finalizada")
         
         # Retorna True e o CPF do passageiro para notificação
         return True, corrida.passageiro.usuario.cpf if corrida.passageiro else None
@@ -443,6 +401,24 @@ def cancelar_corrida(corrida_id, user_cpf, user_tipo, motivo, status='CANCELADA'
             motorista.save()
         
         logger.info(f"Corrida {corrida_id} cancelada por {user_tipo} {user_cpf}. Motivo: {motivo}")
+
+        # Após cancelar, remover da memória se existir
+        global corridas_em_andamento
+        if corridas_em_andamento and corrida.id in corridas_em_andamento:
+            del corridas_em_andamento[corrida.id]
+            logger.info(f"Corrida {corrida.id} removida do cache em memória após cancelamento")
+        
+        # Sincronizar o estado em memória das corridas em andamento
+        try:
+            # Garantir que essa corrida seja removida de qualquer cache em memória
+            if corrida.id in corridas_em_andamento:
+                del corridas_em_andamento[corrida.id]
+                logger.info(f"Corrida {corrida_id} removida do cache em memória após cancelamento")
+            
+            # Sincronizar todas as corridas em andamento
+            sincronizar_corridas_em_andamento()
+        except Exception as sync_error:
+            logger.error(f"Erro ao sincronizar estado em memória após cancelamento: {str(sync_error)}")
         
         # Retorna True e o CPF da outra parte para notificação
         return True, outro_cpf
@@ -451,440 +427,18 @@ def cancelar_corrida(corrida_id, user_cpf, user_tipo, motivo, status='CANCELADA'
         logger.error(f"Erro ao cancelar corrida: {str(e)}")
         return False, None
 
-def registrar_chegada_motorista(corrida_id, motorista_cpf):
-    """Registra a chegada do motorista ao local de embarque"""
-    try:
-        corrida = Corrida.objects.get(id=corrida_id)
-        corrida.status = 'MOTORISTA_CHEGOU'
-        corrida.data_chegada_motorista = timezone.now()
-        corrida.save()
-        return True
-    except Corrida.DoesNotExist:
-        logger.error(f"Corrida {corrida_id} não encontrada para registrar chegada")
-        return False
-
-def cancelar_corrida_sem_motoristas(corrida_id):
-    """Cancela uma corrida automaticamente quando não há motoristas disponíveis"""
-    try:
-        corrida = Corrida.objects.get(id=corrida_id)
-        corrida.status = 'CANCELADA'
-        corrida.motivo_cancelamento = 'Não havia motoristas disponíveis no momento'
-        corrida.cancelada_por_tipo = 'SISTEMA'
-        corrida.data_cancelamento = timezone.now()
-        corrida.save()
-        logger.info(f"Corrida {corrida_id} cancelada automaticamente por falta de motoristas disponíveis")
-        return True
-    except Exception as e:
-        logger.error(f"Erro ao cancelar corrida sem motoristas: {str(e)}")
-        return False
-
-def iniciar_corrida(corrida_id, motorista_cpf, status='EM_ANDAMENTO'):
-    """Inicia uma corrida após o motorista chegar e o passageiro embarcar"""
-    try:
-        # Verificar se a corrida existe e está com status de motorista chegou
-        try:
-            corrida = Corrida.objects.get(id=corrida_id)
-        except Corrida.DoesNotExist:
-            logger.error(f"Corrida {corrida_id} não encontrada para iniciar")
-            return False, None
-            
-        # Verificar se o motorista é o mesmo da corrida
-        try:
-            usuario = Usuario.objects.get(cpf=motorista_cpf, tipo_usuario='MOTORISTA')
-            motorista = Motorista.objects.get(usuario=usuario)
-            
-            if corrida.motorista != motorista:
-                logger.error(f"Motorista {motorista_cpf} não está associado à corrida {corrida_id}")
-                return False, None
-        except (Usuario.DoesNotExist, Motorista.DoesNotExist):
-            logger.error(f"Motorista {motorista_cpf} não encontrado")
-            return False, None
-        
-        # Atualizar o status da corrida para EM_ANDAMENTO
-        corrida.status = status
-        corrida.data_inicio = timezone.now()
-        corrida.save()
-        
-        logger.info(f"Corrida {corrida_id} iniciada pelo motorista {motorista_cpf}. Status atualizado para: {status}")
-        
-        # Retornar True e o CPF do passageiro para notificação
-        return True, corrida.passageiro.usuario.cpf if corrida.passageiro else None
-    except Exception as e:
-        logger.error(f"Erro ao iniciar corrida: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False, None
-
-# Função para verificar corridas em andamento do motorista
-def verificar_corrida_em_andamento_motorista(motorista_cpf):
+def limpar_corrida_da_memoria(corrida_id):
     """
-    Verifica se existe alguma corrida em andamento para o motorista especificado.
-    
-    Args:
-        motorista_cpf: CPF do motorista
-    
-    Returns:
-        dict: Informações da corrida em andamento ou None
-    """
-    from corridas.models import Corrida
-    
-    try:
-        print(f"[DEBUG] Verificando corridas em andamento para motorista CPF: {motorista_cpf}")
-        
-        # Substituir a consulta para buscar por CPF diretamente
-        corridas = Corrida.objects.filter(
-            motorista__cpf=motorista_cpf,  # Usando o campo cpf dentro do relacionamento
-            status__in=['ACEITA', 'MOTORISTA_CHEGOU', 'EM_ANDAMENTO']
-        ).order_by('-data_solicitacao')
-        
-        print(f"[DEBUG] Total de corridas encontradas: {corridas.count()}")
-        
-        if not corridas.exists():
-            print(f"[DEBUG] Nenhuma corrida em andamento encontrada para motorista {motorista_cpf}")
-            return None
-            
-        # Pegar a corrida mais recente
-        corrida = corridas.first()
-        print(f"[DEBUG] Corrida encontrada ID: {corrida.id}, status: {corrida.status}")
-            
-        # Se encontrar uma corrida, retornar os dados no formato necessário
-        return {
-            'corridaId': str(corrida.id),
-            'passageiro': {
-                'cpf': corrida.passageiro.usuario.cpf if corrida.passageiro and corrida.passageiro.usuario else None,
-                'nome': corrida.passageiro.usuario.nome if corrida.passageiro and corrida.passageiro.usuario else None,
-                'sobrenome': corrida.passageiro.usuario.sobrenome if corrida.passageiro and corrida.passageiro.usuario else None,
-                'telefone': corrida.passageiro.usuario.telefone if corrida.passageiro and corrida.passageiro.usuario else None
-            },
-            'origem': {
-                'latitude': float(corrida.origem_lat),
-                'longitude': float(corrida.origem_lng),
-                'descricao': corrida.origem_descricao
-            },
-            'destino': {
-                'latitude': float(corrida.destino_lat),
-                'longitude': float(corrida.destino_lng),
-                'descricao': corrida.destino_descricao
-            },
-            'status': corrida.status,
-            'distancia': float(corrida.distancia),
-            'tempo_estimado': corrida.tempo_estimado,
-            'valor': float(corrida.valor)
-        }
-    except Exception as e:
-        import logging
-        import traceback
-        logging.error(f"Erro ao verificar corrida em andamento para motorista {motorista_cpf}: {str(e)}")
-        traceback.print_exc()  # Adicionar traceback para mais detalhes
-        return None
-
-def verificar_corrida_em_andamento_passageiro(passageiro_cpf):
-    """Verifica se o passageiro tem alguma corrida em andamento e retorna os detalhes"""
-    try:
-        usuario = Usuario.objects.get(cpf=passageiro_cpf, tipo_usuario='PASSAGEIRO')
-        passageiro = Passageiro.objects.get(usuario=usuario)
-        
-        # Buscar corrida atual do passageiro (em qualquer estado que não seja finalizado ou cancelado)
-        corrida = Corrida.objects.filter(
-            passageiro=passageiro,
-            status__in=['PENDENTE', 'ACEITA', 'MOTORISTA_CHEGOU', 'EM_ANDAMENTO']
-        ).order_by('-data_aceite').first()
-        
-        if not corrida:
-            logger.info(f"Nenhuma corrida em andamento para o passageiro {passageiro_cpf}")
-            return None
-        
-        # Montar objeto de resposta com todos os dados necessários
-        motorista_info = None
-        if corrida.motorista:
-            motorista = corrida.motorista
-            motorista_info = {
-                'nome': motorista.usuario.get_full_name(),
-                'cpf': motorista.usuario.cpf,
-                'telefone': motorista.usuario.telefone,
-                'modeloCarro': motorista.modelo_veiculo,
-                'corCarro': motorista.cor_veiculo,
-                'placaCarro': motorista.placa_veiculo
-            }
-        
-        # Converter valores decimais para float para serialização JSON
-        resposta = {
-            'corridaId': str(corrida.id),
-            'status': corrida.status,
-            'motorista': motorista_info,
-            'origem': {
-                'latitude': float(corrida.origem_lat),
-                'longitude': float(corrida.origem_lng),
-                'descricao': corrida.origem_descricao
-            },
-            'destino': {
-                'latitude': float(corrida.destino_lat),
-                'longitude': float(corrida.destino_lng),
-                'descricao': corrida.destino_descricao
-            },
-            'valor': float(corrida.valor),
-            'distancia': float(corrida.distancia),
-            'tempo_estimado': corrida.tempo_estimado,
-            'data_solicitacao': corrida.data_solicitacao.isoformat(),
-            'data_aceite': corrida.data_aceite.isoformat() if corrida.data_aceite else None,
-            'data_chegada': corrida.data_chegada_motorista.isoformat() if hasattr(corrida, 'data_chegada_motorista') and corrida.data_chegada_motorista else None,
-            'data_inicio': corrida.data_inicio.isoformat() if hasattr(corrida, 'data_inicio') and corrida.data_inicio else None
-        }
-        
-        logger.info(f"Corrida em andamento encontrada para o passageiro {passageiro_cpf}: ID {corrida.id}, status {corrida.status}")
-        return resposta
-        
-    except Exception as e:
-        logger.error(f"Erro ao buscar corrida em andamento do passageiro: {str(e)}")
-        return None
-
-def avaliar_motorista(corrida_id, passageiro_cpf, avaliacao, comentario=None):
-    """
-    Passageiro avalia o motorista após a corrida
-    - avaliacao: valor de 1 a 5 estrelas
-    - comentario: comentário opcional sobre a experiência
+    Remove uma corrida específica da memória.
+    Usado principalmente quando uma corrida é excluída via admin.
     """
     try:
-        # Verificar se a corrida existe e está finalizada
-        corrida = Corrida.objects.get(id=corrida_id)
-        
-        if corrida.status not in ['FINALIZADA', 'FINALIZADA_PENDENTE_AVALIACAO']:
-            logger.error(f"Tentativa de avaliar motorista para corrida não finalizada: {corrida_id}")
-            return False, None
-            
-        # Verificar se o passageiro é o mesmo da corrida
-        usuario = Usuario.objects.get(cpf=passageiro_cpf, tipo_usuario='PASSAGEIRO')
-        passageiro = Passageiro.objects.get(usuario=usuario)
-        
-        if corrida.passageiro != passageiro:
-            logger.error(f"Passageiro {passageiro_cpf} não autorizado a avaliar esta corrida: {corrida_id}")
-            return False, None
-            
-        # Verificar se o motorista está atribuído à corrida
-        if not corrida.motorista:
-            logger.error(f"Corrida {corrida_id} não possui motorista para avaliar")
-            return False, None
-            
-        # Garantir que avaliação está entre 1 e 5
-        avaliacao_normalizada = max(1, min(5, int(avaliacao)))
-        
-        # Registrar a avaliação na corrida
-        corrida.avaliacao_motorista = avaliacao_normalizada
-        corrida.comentario_motorista = comentario
-        corrida.data_avaliacao_motorista = timezone.now()
-        corrida.save(update_fields=['avaliacao_motorista', 'comentario_motorista', 'data_avaliacao_motorista'])
-        
-        # Atualizar a média de avaliações do motorista
-        motorista = corrida.motorista
-        corridas_avaliadas = Corrida.objects.filter(
-            motorista=motorista,
-            avaliacao_motorista__isnull=False
-        )
-        
-        total_avaliacoes = corridas_avaliadas.count()
-        soma_avaliacoes = sum(c.avaliacao_motorista for c in corridas_avaliadas)
-        
-        if total_avaliacoes > 0:
-            motorista.avaliacao_media = soma_avaliacoes / total_avaliacoes
-            motorista.save(update_fields=['avaliacao_media'])
-            
-        logger.info(f"Motorista da corrida {corrida_id} avaliado com {avaliacao_normalizada} estrelas pelo passageiro {passageiro_cpf}")
-        
-        # Retornar True e o CPF do motorista para notificação
-        return True, motorista.usuario.cpf
-        
-    except Corrida.DoesNotExist:
-        logger.error(f"Corrida {corrida_id} não encontrada para avaliação")
-        return False, None
-    except (Usuario.DoesNotExist, Passageiro.DoesNotExist):
-        logger.error(f"Passageiro com CPF {passageiro_cpf} não encontrado")
-        return False, None
-    except Exception as e:
-        logger.error(f"Erro ao avaliar motorista: {str(e)}")
-        return False, None
-
-def avaliar_passageiro(corrida_id, motorista_cpf, avaliacao, comentario=None):
-    """
-    Motorista avalia o passageiro após a corrida
-    - avaliacao: valor de 1 a 5 estrelas
-    - comentario: comentário opcional sobre a experiência
-    """
-    try:
-        # Verificar se a corrida existe e está finalizada
-        corrida = Corrida.objects.get(id=corrida_id)
-        
-        if corrida.status not in ['FINALIZADA', 'FINALIZADA_PENDENTE_AVALIACAO']:
-            logger.error(f"Tentativa de avaliar passageiro para corrida não finalizada: {corrida_id}")
-            return False, None
-            
-        # Verificar se o motorista é o mesmo da corrida
-        usuario = Usuario.objects.get(cpf=motorista_cpf, tipo_usuario='MOTORISTA')
-        motorista = Motorista.objects.get(usuario=usuario)
-        
-        if corrida.motorista != motorista:
-            logger.error(f"Motorista {motorista_cpf} não autorizado a avaliar esta corrida: {corrida_id}")
-            return False, None
-            
-        # Verificar se o passageiro está atribuído à corrida
-        if not corrida.passageiro:
-            logger.error(f"Corrida {corrida_id} não possui passageiro para avaliar")
-            return False, None
-            
-        # Garantir que avaliação está entre 1 e 5
-        avaliacao_normalizada = max(1, min(5, int(avaliacao)))
-        
-        # Registrar a avaliação na corrida
-        corrida.avaliacao_passageiro = avaliacao_normalizada
-        corrida.comentario_passageiro = comentario
-        corrida.data_avaliacao_passageiro = timezone.now()
-        corrida.save(update_fields=['avaliacao_passageiro', 'comentario_passageiro', 'data_avaliacao_passageiro'])
-        
-        # Atualizar a média de avaliações do passageiro
-        passageiro = corrida.passageiro
-        corridas_avaliadas = Corrida.objects.filter(
-            passageiro=passageiro,
-            avaliacao_passageiro__isnull=False
-        )
-        
-        total_avaliacoes = corridas_avaliadas.count()
-        soma_avaliacoes = sum(c.avaliacao_passageiro for c in corridas_avaliadas)
-        
-        if total_avaliacoes > 0:
-            passageiro.avaliacao_media = soma_avaliacoes / total_avaliacoes
-            passageiro.save(update_fields=['avaliacao_media'])
-            
-        logger.info(f"Passageiro da corrida {corrida_id} avaliado com {avaliacao_normalizada} estrelas pelo motorista {motorista_cpf}")
-        
-        # Retornar True e o CPF do passageiro para notificação
-        return True, passageiro.usuario.cpf
-        
-    except Corrida.DoesNotExist:
-        logger.error(f"Corrida {corrida_id} não encontrada para avaliação")
-        return False, None
-    except (Usuario.DoesNotExist, Motorista.DoesNotExist):
-        logger.error(f"Motorista com CPF {motorista_cpf} não encontrado")
-        return False, None
-    except Exception as e:
-        logger.error(f"Erro ao avaliar passageiro: {str(e)}")
-        return False, None
-
-def obter_dados_avaliacao_corrida(corrida_id):
-    """
-    Retorna os dados de avaliação de uma corrida específica
-    Útil para verificar se ambas as partes já avaliaram
-    """
-    try:
-        corrida = Corrida.objects.get(id=corrida_id)
-        
-        # Preparar os dados de avaliação da corrida
-        dados_avaliacao = {
-            'corridaId': str(corrida.id),
-            'status': corrida.status,
-            'avaliacao_motorista': {
-                'nota': corrida.avaliacao_motorista,
-                'comentario': corrida.comentario_motorista,
-                'data': corrida.data_avaliacao_motorista.isoformat() if corrida.data_avaliacao_motorista else None,
-                'realizada': corrida.avaliacao_motorista is not None
-            },
-            'avaliacao_passageiro': {
-                'nota': corrida.avaliacao_passageiro,
-                'comentario': corrida.comentario_passageiro,
-                'data': corrida.data_avaliacao_passageiro.isoformat() if corrida.data_avaliacao_passageiro else None,
-                'realizada': corrida.avaliacao_passageiro is not None
-            },
-            'ambos_avaliaram': (corrida.avaliacao_motorista is not None) and (corrida.avaliacao_passageiro is not None)
-        }
-        
-        logger.info(f"Dados de avaliação obtidos para corrida {corrida_id}")
-        return dados_avaliacao
-        
-    except Corrida.DoesNotExist:
-        logger.error(f"Corrida {corrida_id} não encontrada ao obter dados de avaliação")
-        return None
-    except Exception as e:
-        logger.error(f"Erro ao obter dados de avaliação da corrida: {str(e)}")
-        return None
-
-def atualizar_status_corrida(corrida_id, novo_status):
-    """
-    Atualiza o status de uma corrida no banco de dados.
-    """
-    try:
-        logger.info(f"[DEBUG] Iniciando atualização de status da corrida {corrida_id} para {novo_status}")
-        
-        try:
-            corrida = Corrida.objects.get(id=corrida_id)
-        except Corrida.DoesNotExist:
-            logger.error(f"[ERRO] Corrida {corrida_id} não encontrada para atualização de status")
-            return False
-            
-        status_anterior = corrida.status
-        logger.info(f"[DEBUG] Status atual da corrida {corrida_id}: {status_anterior}")
-        
-        # Verificar se é uma transição de status válida
-        status_validos = {
-            'PENDENTE': ['ACEITA', 'CANCELADA'],
-            'ACEITA': ['A_CAMINHO', 'MOTORISTA_CHEGOU', 'CANCELADA'],
-            'A_CAMINHO': ['MOTORISTA_CHEGOU', 'CANCELADA'],
-            'MOTORISTA_CHEGOU': ['EM_ANDAMENTO', 'CANCELADA'],
-            'EM_ANDAMENTO': ['FINALIZADA', 'FINALIZADA_PENDENTE_AVALIACAO', 'CANCELADA'],
-            'FINALIZADA_PENDENTE_AVALIACAO': ['FINALIZADA'],
-            'FINALIZADA': [],  # Status final
-            'CANCELADA': []    # Status final
-        }
-        
-        if status_anterior in status_validos and novo_status not in status_validos.get(status_anterior, []):
-            logger.warning(f"[AVISO] Transição de status inválida: de {status_anterior} para {novo_status}")
-            # Permitir a transição mesmo assim, apenas registrando o aviso
-        
-        corrida.status = novo_status
-        logger.info(f"[DEBUG] Novo status definido: {corrida.status}")
-        
-        # Se estiver finalizando a corrida, registrar a data de finalização
-        if novo_status in ['FINALIZADA', 'FINALIZADA_PENDENTE_AVALIACAO'] and status_anterior not in ['FINALIZADA', 'FINALIZADA_PENDENTE_AVALIACAO']:
-            corrida.data_fim = timezone.now()
-            logger.info(f"[DEBUG] Data de finalização registrada: {corrida.data_fim}")
-            
-            # Se o motorista existe, atualizar seu status
-            if corrida.motorista:
-                motorista = corrida.motorista
-                motorista_antes = f"Status: {motorista.status}, Disponível: {motorista.esta_disponivel}"
-                
-                motorista.status = 'DISPONIVEL'
-                motorista.esta_disponivel = True
-                motorista.save(update_fields=['status', 'esta_disponivel'])
-                
-                logger.info(f"[DEBUG] Status do motorista atualizado: {motorista_antes} -> Status: DISPONIVEL, Disponível: True")
-        
-        # Adicionar registro de data específico para cada transição de status
-        if novo_status == 'A_CAMINHO' and not hasattr(corrida, 'data_a_caminho'):
-            corrida.data_a_caminho = timezone.now()
-            logger.info(f"[DEBUG] Data 'a caminho' registrada: {corrida.data_a_caminho}")
-        elif novo_status == 'MOTORISTA_CHEGOU' and not hasattr(corrida, 'data_chegada_motorista'):
-            corrida.data_chegada_motorista = timezone.now()
-            logger.info(f"[DEBUG] Data de chegada do motorista registrada: {corrida.data_chegada_motorista}")
-        elif novo_status == 'EM_ANDAMENTO' and not hasattr(corrida, 'data_inicio'):
-            corrida.data_inicio = timezone.now()
-            logger.info(f"[DEBUG] Data de início da corrida registrada: {corrida.data_inicio}")
-        elif novo_status in ['FINALIZADA', 'FINALIZADA_PENDENTE_AVALIACAO'] and not hasattr(corrida, 'data_fim'):
-            corrida.data_fim = timezone.now()
-            logger.info(f"[DEBUG] Data de finalização registrada: {corrida.data_fim}")
-        
-        # Garantir a persistência imediata da alteração com flush
-        try:
-            corrida.save()
-            from django.db import connection
-            connection.commit()
-            logger.info(f"[SUCESSO] Status da corrida {corrida_id} atualizado de {status_anterior} para {novo_status}")
+        global corridas_em_andamento
+        if corrida_id in corridas_em_andamento:
+            del corridas_em_andamento[corrida_id]
+            logger.info(f"Corrida {corrida_id} removida do cache em memória após ser excluída via admin")
             return True
-        except Exception as save_error:
-            logger.error(f"[ERRO] Falha ao salvar alteração no banco de dados: {str(save_error)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-            
+        return False
     except Exception as e:
-        logger.error(f"[ERRO] Erro ao atualizar status da corrida {corrida_id}: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"Erro ao limpar corrida {corrida_id} da memória: {str(e)}")
         return False

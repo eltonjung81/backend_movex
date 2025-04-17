@@ -280,6 +280,14 @@ class LoginMotoristaView(APIView):
                 user = authenticate(request, username=cpf, password=password)
                 
                 if user is not None and user.tipo_usuario == 'MOTORISTA':
+                    # NÃO definir o motorista como disponível aqui, isso será feito na conexão WebSocket
+                    # Verificar o status atual apenas para fins de diagnóstico
+                    try:
+                        motorista = Motorista.objects.get(cpf=user.cpf)
+                        print(f"[DEBUG] Status atual do motorista {cpf}: {motorista.status}, disponível: {motorista.esta_disponivel}")
+                    except Exception as e:
+                        print(f"[ERRO] Falha ao verificar status do motorista: {e}")
+                    
                     # Cria ou obtém um token para o usuário
                     token, created = Token.objects.get_or_create(user=user)
                     
@@ -296,7 +304,6 @@ class LoginMotoristaView(APIView):
                     
                     # Adiciona dados específicos do motorista
                     try:
-                        motorista = Motorista.objects.get(cpf=user.cpf)
                         response_data['motorista'] = {
                             'id': user.cpf,  # Usando CPF como ID do motorista
                             'cnh': motorista.cnh,
@@ -305,7 +312,9 @@ class LoginMotoristaView(APIView):
                             'cor_veiculo': motorista.cor_veiculo,
                             'telefone': user.telefone,
                             'avaliacao_media': float(motorista.avaliacao_media),
-                            'nome_completo': user.get_full_name()
+                            'nome_completo': user.get_full_name(),
+                            'status': motorista.status,
+                            'disponivel': motorista.esta_disponivel
                         }
                     except Exception as e:
                         print(f"Erro ao obter dados do motorista: {str(e)}")
