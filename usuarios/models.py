@@ -76,7 +76,8 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
 class Passageiro(models.Model):
     usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, primary_key=True)
-    foto_perfil = models.ImageField(upload_to='passageiros/', null=True, blank=True)
+    # Temporariamente usando CharField em vez de ImageField para evitar dependência do Pillow
+    foto_perfil = models.CharField(max_length=255, null=True, blank=True)  # Alterado de ImageField para CharField
     avaliacao_media = models.DecimalField(max_digits=3, decimal_places=1, default=Decimal('0.0'))
     endereco = models.CharField(max_length=255, blank=True, null=True)  # Adicionando o campo endereco
     
@@ -100,7 +101,8 @@ class Motorista(models.Model):
     cpf = models.CharField(max_length=14, primary_key=True)
     cnh = models.CharField(max_length=20, unique=True)
     categoria_cnh = models.CharField(max_length=5)
-    foto_perfil = models.ImageField(upload_to='motoristas/', null=True, blank=True)
+    # Temporariamente usando CharField em vez de ImageField para evitar dependência do Pillow
+    foto_perfil = models.CharField(max_length=255, null=True, blank=True)  # Alterado de ImageField para CharField
     avaliacao_media = models.DecimalField(max_digits=3, decimal_places=1, default=Decimal('0.0'))
     
     # Dados do veículo
