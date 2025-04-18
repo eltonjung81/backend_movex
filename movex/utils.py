@@ -377,3 +377,80 @@ def debug_websocket_message(message_type, data, direction='SEND'):
             
     except Exception as e:
         logger.error(f"Erro ao registrar mensagem WebSocket: {e}")
+
+# Código para envio de notificações push
+import json
+import requests
+import logging
+from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+def enviar_notificacao_push(
+    token: str, 
+    titulo: str, 
+    mensagem: str, 
+    dados: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Envia uma notificação push utilizando a API do Expo
+    
+    Args:
+        token: Token do dispositivo (Expo Push Token)
+        titulo: Título da notificação
+        mensagem: Conteúdo da notificação
+        dados: Dados adicionais para a notificação (opcional)
+        
+    Returns:
+        bool: True se foi enviada com sucesso, False caso contrário
+    """
+    if not token or not token.startswith('ExponentPushToken['):
+        logger.error(f"Token inválido para notificação push: {token}")
+        return False
+        
+    try:
+        headers = {
+            'Accept': 'application/json',
+            'Accept-encoding': 'gzip, deflate',
+            'Content-Type': 'application/json',
+        }
+        
+        payload = {
+            'to': token,
+            'sound': 'default',
+            'title': titulo,
+            'body': mensagem,
+            'priority': 'high',
+        }
+        
+        # Adiciona dados extras se fornecidos
+        if dados:
+            payload['data'] = dados
+            
+        logger.debug(f"Enviando notificação push para token: {token}")
+        logger.debug(f"Payload: {json.dumps(payload)}")
+        
+        response = requests.post(
+            'https://exp.host/--/api/v2/push/send',
+            headers=headers,
+            json=payload
+        )
+        
+        logger.debug(f"Resposta do servidor Expo: {response.status_code} - {response.text}")
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            # Verificar se há erros na resposta
+            if 'errors' in response_data and response_data['errors']:
+                logger.error(f"Erros no envio da notificação: {response_data['errors']}")
+                return False
+            else:
+                logger.info(f"Notificação push enviada com sucesso: {titulo}")
+                return True
+        else:
+            logger.error(f"Falha ao enviar notificação push: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.exception(f"Erro ao enviar notificação push: {str(e)}")
+        return False

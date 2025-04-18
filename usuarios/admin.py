@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html
-from .models import Usuario, Passageiro, Motorista
+from .models import Usuario, Passageiro, Motorista, PushToken
 from corridas.models import Corrida
 
 class CustomAdminSite(admin.AdminSite):
@@ -93,3 +93,4 @@ admin_site.register(Corrida, CorridaAdmin)
 admin.site.register(Usuario, UsuarioAdmin)
 admin.site.register(Motorista, MotoristaAdmin)
 admin.site.register(Passageiro, PassageiroAdmin)
+admin.site.register(PushToken)  # Registrando o novo modelo PushToken

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Motorista, Passageiro
+from .models import Usuario, Motorista, Passageiro, PushToken
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 
@@ -116,3 +116,34 @@ class RegistroPassageiroSerializer(serializers.ModelSerializer):
 class LoginPassageiroSerializer(serializers.Serializer):
     cpf = serializers.CharField()
     password = serializers.CharField()
+
+class PushTokenSerializer(serializers.ModelSerializer):
+    cpf = serializers.CharField(write_only=True, required=True)
+    
+    class Meta:
+        model = PushToken
+        fields = ['token', 'cpf', 'plataforma']
+        extra_kwargs = {'plataforma': {'required': False, 'default': 'expo'}}
+        
+    def create(self, validated_data):
+        cpf = validated_data.pop('cpf')
+        try:
+            usuario = Usuario.objects.get(cpf=cpf)
+            # Verificar se já existe um token para este usuário
+            token_existente = PushToken.objects.filter(usuario=usuario).first()
+            
+            if token_existente:
+                # Atualizar token existente
+                token_existente.token = validated_data.get('token')
+                token_existente.plataforma = validated_data.get('plataforma', token_existente.plataforma)
+                token_existente.ativo = True
+                token_existente.save()
+                return token_existente
+            else:
+                # Criar novo token
+                return PushToken.objects.create(
+                    usuario=usuario,
+                    **validated_data
+                )
+        except Usuario.DoesNotExist:
+            raise serializers.ValidationError({"cpf": "Usuário não encontrado com este CPF"})

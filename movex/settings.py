@@ -1,20 +1,16 @@
 import os
-import dj_database_url
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-chave-secreta-temporaria-para-desenvolvimento')
+SECRET_KEY = 'django-insecure-chave-secreta-temporaria-para-desenvolvimento'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+DEBUG = True
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
-RAILWAY_DOMAIN = 'web-production-dca28.up.railway.app'
-if RAILWAY_DOMAIN not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(RAILWAY_DOMAIN)
+ALLOWED_HOSTS = ['*']  # Em produção, especifique os hosts permitidos
 
 # Application definition
 INSTALLED_APPS = [
@@ -101,24 +97,12 @@ CHANNEL_LAYERS = {
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
-DATABASE_URL = os.environ.get('DATABASE_URL')
-if DATABASE_URL:
-    # Configuração para PostgreSQL no Railway
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=DATABASE_URL,
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
-else:
-    # Fallback para SQLite em desenvolvimento
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -166,8 +150,6 @@ CSRF_TRUSTED_ORIGINS = [
     'http://192.168.1.104:8000',
     'http://192.168.1.111:8000',
     'https://892e926d-fa50-497b-a5f4-fc7b3a2e6dfd-00-5485g5nef0vj.janeway.replit.dev',
-    f'https://{RAILWAY_DOMAIN}',
-    f'http://{RAILWAY_DOMAIN}',
 ]
 CSRF_COOKIE_SECURE = False
 CSRF_COOKIE_HTTPONLY = False

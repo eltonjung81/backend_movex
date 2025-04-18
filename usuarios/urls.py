@@ -1,5 +1,13 @@
 from django.urls import path
-from .views import RegistroMotoristaView, LoginView, BuscarDadosMotoristaView, RegistroPassageiroView, LoginPassageiroView, LoginMotoristaView
+from .views import (
+    RegistroMotoristaView, 
+    LoginView, 
+    BuscarDadosMotoristaView, 
+    RegistroPassageiroView, 
+    LoginPassageiroView, 
+    LoginMotoristaView,
+    SalvarTokenPushView
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,6 +21,7 @@ urlpatterns = [
     path('registro/passageiro/', RegistroPassageiroView.as_view(), name='registro-passageiro'),
     path('login/', LoginView.as_view(), name='login'),
     path('login/passageiro/', LoginPassageiroView.as_view(), name='login-passageiro'),
+    path('salvar-token/', SalvarTokenPushView.as_view(), name='salvar-token-push'),
     # Removendo rotas duplicadas que já estão no arquivo principal
     # path('login/motorista/', LoginMotoristaView.as_view(), name='login-motorista'),
     # path('motorista/buscar_dados/', BuscarDadosMotoristaView.as_view(), name='buscar_dados_motorista'),

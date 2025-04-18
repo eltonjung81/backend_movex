@@ -1,36 +1,19 @@
-# Byte-compiled / optimized / DLL files
+# Python
+*.pyc
+*.pyo
 __pycache__/
-*.py[cod]
-*$py.class
 
-# Local development settings
-.env
-.env.local
-.venv
-env/
+# Django
+*.sqlite3
+*.log
+
+# Virtual environments
 venv/
-ENV/
-
-# Database
-db.sqlite3
-db.sqlite3-journal
+.env
 
 # Static files
-/staticfiles/
+staticfiles/
 
-# Media files
-/media/
-
-# Logs
-*.log
-daphne.log
-
-# IDE specific files
-.idea/
+# IDEs
 .vscode/
-*.swp
-*.swo
-
-# OS specific files
-.DS_Store
-Thumbs.db
+.idea/

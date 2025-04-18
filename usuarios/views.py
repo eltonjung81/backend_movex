@@ -4,7 +4,13 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token  # Garantindo que o Token seja importado corretamente
 from django.contrib.auth import authenticate
-from .serializers import MotoristaSerializer, LoginSerializer, RegistroPassageiroSerializer, LoginPassageiroSerializer
+from .serializers import (
+    MotoristaSerializer, 
+    LoginSerializer, 
+    RegistroPassageiroSerializer, 
+    LoginPassageiroSerializer,
+    PushTokenSerializer
+)
 from .models import Usuario, Motorista
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.views.decorators.csrf import csrf_exempt
@@ -336,3 +342,35 @@ class LoginMotoristaView(APIView):
         else:
             print(f"[DEBUG] Login motorista - erros de validação: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class SalvarTokenPushView(APIView):
+    """
+    View para salvar o token push de um usuário
+    """
+    permission_classes = [AllowAny]  # Permitir acesso sem autenticação
+    
+    def post(self, request):
+        logger.debug(f"Recebendo token push: {request.data}")
+        
+        serializer = PushTokenSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                token_push = serializer.save()
+                logger.info(f"Token push salvo para usuário {token_push.usuario.cpf}")
+                return Response(
+                    {"success": True, "message": "Token push salvo com sucesso"},
+                    status=status.HTTP_201_CREATED
+                )
+            except Exception as e:
+                logger.error(f"Erro ao salvar token push: {str(e)}")
+                return Response(
+                    {"success": False, "error": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            logger.error(f"Erro na validação do token push: {serializer.errors}")
+            return Response(
+                {"success": False, "errors": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )

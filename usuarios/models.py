@@ -76,8 +76,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
 class Passageiro(models.Model):
     usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, primary_key=True)
-    # Temporariamente usando CharField em vez de ImageField para evitar dependência do Pillow
-    foto_perfil = models.CharField(max_length=255, null=True, blank=True)  # Alterado de ImageField para CharField
+    foto_perfil = models.ImageField(upload_to='passageiros/', null=True, blank=True)
     avaliacao_media = models.DecimalField(max_digits=3, decimal_places=1, default=Decimal('0.0'))
     endereco = models.CharField(max_length=255, blank=True, null=True)  # Adicionando o campo endereco
     
@@ -101,8 +100,7 @@ class Motorista(models.Model):
     cpf = models.CharField(max_length=14, primary_key=True)
     cnh = models.CharField(max_length=20, unique=True)
     categoria_cnh = models.CharField(max_length=5)
-    # Temporariamente usando CharField em vez de ImageField para evitar dependência do Pillow
-    foto_perfil = models.CharField(max_length=255, null=True, blank=True)  # Alterado de ImageField para CharField
+    foto_perfil = models.ImageField(upload_to='motoristas/', null=True, blank=True)
     avaliacao_media = models.DecimalField(max_digits=3, decimal_places=1, default=Decimal('0.0'))
     
     # Dados do veículo
@@ -130,3 +128,19 @@ class Motorista(models.Model):
     class Meta:
         verbose_name = 'Motorista'
         verbose_name_plural = 'Motoristas'
+
+class PushToken(models.Model):
+    """Modelo para armazenar tokens de notificação push dos usuários"""
+    usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='push_token')
+    token = models.CharField(max_length=255)
+    plataforma = models.CharField(max_length=50, default='expo') # 'expo', 'fcm', etc.
+    ativo = models.BooleanField(default=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Token de {self.usuario.get_full_name()} - {'Ativo' if self.ativo else 'Inativo'}"
+    
+    class Meta:
+        verbose_name = 'Token Push'
+        verbose_name_plural = 'Tokens Push'

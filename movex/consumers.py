@@ -26,7 +26,8 @@ from .utils import (
     HORARIO_PICO_TARDE_INICIO,
     HORARIO_PICO_TARDE_FIM,
     calcular_rota_simplificada_melhorada,
-    debug_websocket_message
+    debug_websocket_message,
+    enviar_notificacao_push,
 )
 
 # Importando funções de database_services
@@ -1316,14 +1317,53 @@ class MoveXConsumer(AsyncWebsocketConsumer):
     
     # Handler para nova mensagem de chat
     async def nova_mensagem_chat(self, event):
-        await self.send(text_data=json.dumps({
+        mensagem = {
             'type': 'nova_mensagem',
             'corridaId': event.get('corridaId'),
             'id': event.get('id'),
             'conteudo': event.get('conteudo'),
             'data': event.get('data'),
             'remetente': event.get('remetente')
-        }))
+        }
+        
+        await self.send(text_data=json.dumps(mensagem))
+        
+        # NOTIFICAÇÃO PUSH: Enviar notificação quando uma nova mensagem de chat for recebida
+        # (apenas se for uma mensagem do motorista para o passageiro)
+        try:
+            if (event.get('remetente') == 'MOTORISTA' and 
+                self.user_info and 
+                self.user_info.get('cpf') and 
+                self.user_info.get('tipo') == 'PASSAGEIRO'):
+                
+                passageiro_cpf = self.user_info.get('cpf')
+                conteudo = event.get('conteudo', '')
+                
+                # Limitar o conteúdo da mensagem para a notificação
+                conteudo_abreviado = (conteudo[:50] + '...') if len(conteudo) > 50 else conteudo
+                
+                # Preparar dados para a notificação push
+                titulo = "Nova mensagem do motorista"
+                mensagem_push = conteudo_abreviado
+                dados_adicionais = {
+                    "tipo": "nova_mensagem_chat",
+                    "corridaId": event.get('corridaId'),
+                    "mensagemId": event.get('id'),
+                    "conteudoCompleto": conteudo
+                }
+                
+                # Enviar notificação push
+                await enviar_notificacao_passageiro(
+                    passageiro_cpf,
+                    titulo,
+                    mensagem_push,
+                    dados_adicionais
+                )
+            else:
+                # Não há necessidade de notificação ou não é uma mensagem do motorista para o passageiro
+                pass
+        except Exception as e:
+            logger.error(f"Erro ao enviar notificação push de nova mensagem: {str(e)}")
     
     # Handler para notificação de chegada do motorista (enviado ao passageiro)
     async def motorista_chegou(self, event):
@@ -1397,7 +1437,37 @@ class MoveXConsumer(AsyncWebsocketConsumer):
         
         # Enviar a mensagem ao cliente
         await self.send(text_data=json.dumps(mensagem_chegada))
-
+        
+        # NOTIFICAÇÃO PUSH: Enviar notificação quando o motorista chegar ao local
+        try:
+            if self.user_info and self.user_info.get('cpf'):
+                passageiro_cpf = self.user_info.get('cpf')
+                motorista_info = mensagem_chegada.get('motorista', {})
+                nome_motorista = f"{motorista_info.get('nome', 'Motorista')} {motorista_info.get('sobrenome', '')}".strip()
+                
+                # Preparar dados para a notificação push
+                titulo = "Seu motorista chegou!"
+                mensagem_push = f"{nome_motorista} chegou ao local de embarque e está aguardando você."
+                dados_adicionais = {
+                    "tipo": "motorista_chegou",
+                    "corridaId": corridaId,
+                    "motoristaNome": nome_motorista,
+                    "motoristaCarro": f"{motorista_info.get('corCarro', '')} - {motorista_info.get('modeloCarro', '')}",
+                    "motoristaPlaca": motorista_info.get('placaCarro', '')
+                }
+                
+                # Enviar notificação push
+                await enviar_notificacao_passageiro(
+                    passageiro_cpf,
+                    titulo,
+                    mensagem_push,
+                    dados_adicionais
+                )
+            else:
+                logger.warning("Não foi possível enviar notificação push: CPF do passageiro desconhecido")
+        except Exception as e:
+            logger.error(f"Erro ao enviar notificação push de motorista chegou: {str(e)}")
+    
     # Handler para corrida aceita (enviado ao passageiro)
     async def corrida_aceita(self, event):
         # Obter os dados do motorista do evento
@@ -1455,13 +1525,46 @@ class MoveXConsumer(AsyncWebsocketConsumer):
         
         logger.info(f"Enviando dados do motorista para passageiro: nome={motorista_reformatado['nome']}, cpf={motorista_reformatado['cpf']}")
         
-        # Enviar a mensagem no formato esperado pelo cliente
-        await self.send(text_data=json.dumps({
+        # Preparar mensagem para o cliente
+        mensagem = {
             'type': 'corrida_aceita',
             'corridaId': event.get('corridaId'),
             'motorista': motorista_reformatado,
             'message': 'Um motorista aceitou sua solicitação de corrida.'
-        }))
+        }
+        
+        # Enviar a mensagem no formato esperado pelo cliente
+        await self.send(text_data=json.dumps(mensagem))
+        
+        # NOTIFICAÇÃO PUSH: Enviar notificação quando o motorista aceitar a corrida
+        try:
+            corrida_id = event.get('corridaId')
+            if self.user_info and self.user_info.get('cpf'):
+                passageiro_cpf = self.user_info.get('cpf')
+                nome_motorista = f"{motorista_reformatado['nome']} {motorista_reformatado['sobrenome']}".strip()
+                
+                # Preparar dados para a notificação push
+                titulo = "Corrida aceita!"
+                mensagem_push = f"{nome_motorista} aceitou sua corrida e está a caminho."
+                dados_adicionais = {
+                    "tipo": "corrida_aceita",
+                    "corridaId": corrida_id,
+                    "motoristaNome": nome_motorista,
+                    "motoristaCarro": f"{motorista_reformatado['corCarro']} - {motorista_reformatado['modeloCarro']}",
+                    "motoristaPlaca": motorista_reformatado['placaCarro']
+                }
+                
+                # Enviar notificação push
+                await enviar_notificacao_passageiro(
+                    passageiro_cpf,
+                    titulo,
+                    mensagem_push,
+                    dados_adicionais
+                )
+            else:
+                logger.warning("Não foi possível enviar notificação push: CPF do passageiro desconhecido")
+        except Exception as e:
+            logger.error(f"Erro ao enviar notificação push de corrida aceita: {str(e)}")
 
     # Handler para notificação de início de corrida (enviado ao passageiro)
     async def corrida_iniciada(self, event):
@@ -1478,6 +1581,48 @@ class MoveXConsumer(AsyncWebsocketConsumer):
             'corridaId': event.get('corridaId'),
             'message': event.get('message', 'O motorista finalizou a corrida.')
         }))
+
+# Função auxiliar para buscar token push do passageiro
+@database_sync_to_async
+def buscar_token_passageiro(cpf_passageiro):
+    """
+    Busca o token push de um passageiro pelo CPF
+    Retorna o token e um booleano indicando se está ativo
+    """
+    try:
+        from usuarios.models import Usuario, PushToken
+        usuario = Usuario.objects.get(cpf=cpf_passageiro)
+        token = PushToken.objects.filter(usuario=usuario, ativo=True).first()
+        if token:
+            logger.info(f"Token push encontrado para passageiro {cpf_passageiro}")
+            return token.token, True
+        else:
+            logger.warning(f"Nenhum token push encontrado para passageiro {cpf_passageiro}")
+            return None, False
+    except Exception as e:
+        logger.error(f"Erro ao buscar token push do passageiro {cpf_passageiro}: {str(e)}")
+        return None, False
+
+async def enviar_notificacao_passageiro(cpf_passageiro, titulo, mensagem, dados=None):
+    """
+    Envia uma notificação push para um passageiro específico
+    """
+    try:
+        token_tuple = await buscar_token_passageiro(cpf_passageiro)
+        token, ativo = token_tuple
+        
+        if token and ativo:
+            # Importa a função para o escopo local para evitar problemas de importação circular
+            from movex.utils import enviar_notificacao_push
+            resultado = enviar_notificacao_push(token, titulo, mensagem, dados)
+            logger.info(f"Resultado do envio de notificação push para {cpf_passageiro}: {resultado}")
+            return resultado
+        else:
+            logger.warning(f"Não foi possível enviar notificação push: token inativo ou não encontrado")
+            return False
+    except Exception as e:
+        logger.exception(f"Erro ao enviar notificação push para passageiro {cpf_passageiro}: {str(e)}")
+        return False
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
